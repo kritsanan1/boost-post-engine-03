@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { MainPage } from "@/components/MainPage";
 import { TeamManagement } from "@/components/TeamManagement";
 import { DashboardCustomization } from "@/components/DashboardCustomization";
+import PricingPage from "@/components/PricingPage";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("create");
@@ -31,6 +32,8 @@ const Index = () => {
         return <TeamManagement />;
       case "settings":
         return <DashboardCustomization />;
+      case "pricing":
+        return <PricingPage />;
       default:
         return <MainPage />;
     }
