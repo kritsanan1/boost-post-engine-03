@@ -223,16 +223,20 @@ export type Database = {
       posts: {
         Row: {
           ai_optimized: boolean | null
+          ayrshare_post_id: string | null
           clicks: number | null
           content: string
           created_at: string | null
           engagement_score: number | null
+          error_message: string | null
           id: string
           impressions: number | null
           media_urls: string[] | null
           platform_id: string
+          profile_key: string | null
           reach: number | null
           schedule: string | null
+          scheduled_for: string | null
           status: Database["public"]["Enums"]["post_status"]
           team_id: string | null
           updated_at: string | null
@@ -240,16 +244,20 @@ export type Database = {
         }
         Insert: {
           ai_optimized?: boolean | null
+          ayrshare_post_id?: string | null
           clicks?: number | null
           content: string
           created_at?: string | null
           engagement_score?: number | null
+          error_message?: string | null
           id?: string
           impressions?: number | null
           media_urls?: string[] | null
           platform_id: string
+          profile_key?: string | null
           reach?: number | null
           schedule?: string | null
+          scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
           team_id?: string | null
           updated_at?: string | null
@@ -257,16 +265,20 @@ export type Database = {
         }
         Update: {
           ai_optimized?: boolean | null
+          ayrshare_post_id?: string | null
           clicks?: number | null
           content?: string
           created_at?: string | null
           engagement_score?: number | null
+          error_message?: string | null
           id?: string
           impressions?: number | null
           media_urls?: string[] | null
           platform_id?: string
+          profile_key?: string | null
           reach?: number | null
           schedule?: string | null
+          scheduled_for?: string | null
           status?: Database["public"]["Enums"]["post_status"]
           team_id?: string | null
           updated_at?: string | null
