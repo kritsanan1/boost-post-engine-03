@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   CalendarIcon, 
   ImageIcon, 
@@ -20,7 +22,8 @@ import {
   Instagram,
   Linkedin,
   Users,
-  X
+  X,
+  Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -50,6 +53,8 @@ export function PostCreator() {
   const [scheduleDate, setScheduleDate] = useState<Date>();
   const [showAiSuggestions, setShowAiSuggestions] = useState(false);
   const [profileKey, setProfileKey] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
 
   const getMaxChars = () => {
     if (selectedPlatforms.length === 0) return 280;
@@ -78,15 +83,79 @@ export function PostCreator() {
     setMediaUrls(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
-    console.log({
-      content,
-      platforms: selectedPlatforms,
-      mediaUrls,
-      scheduleDate,
-    });
+    
+    if (!content.trim() || selectedPlatforms.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide content and select at least one platform.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Get current user session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in to create posts.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Call the edge function
+      const { data, error } = await supabase.functions.invoke('create-post', {
+        body: {
+          content,
+          platforms: selectedPlatforms,
+          mediaUrls,
+          scheduleDate: scheduleDate?.toISOString(),
+          profileKey: profileKey.trim() || undefined,
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.success) {
+        toast({
+          title: "Success!",
+          description: data.message,
+        });
+
+        // Reset form
+        setContent("");
+        setSelectedPlatforms([]);
+        setMediaUrls([]);
+        setNewMediaUrl("");
+        setScheduleDate(undefined);
+        setProfileKey("");
+        setShowAiSuggestions(false);
+      } else {
+        throw new Error(data.error || 'Failed to create post');
+      }
+
+    } catch (error: any) {
+      console.error('Error creating post:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create post. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -288,9 +357,14 @@ export function PostCreator() {
                 type="submit"
                 variant="gradient"
                 className="flex-1"
-                disabled={!content.trim() || selectedPlatforms.length === 0}
+                disabled={!content.trim() || selectedPlatforms.length === 0 || isSubmitting}
               >
-                {scheduleDate ? (
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {scheduleDate ? "Scheduling..." : "Publishing..."}
+                  </>
+                ) : scheduleDate ? (
                   <>
                     <Clock className="w-4 h-4" />
                     Schedule Post
@@ -303,7 +377,7 @@ export function PostCreator() {
                 )}
               </Button>
               
-              <Button type="button" variant="outline">
+              <Button type="button" variant="outline" disabled={isSubmitting}>
                 Save Draft
               </Button>
             </div>

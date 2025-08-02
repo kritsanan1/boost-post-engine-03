@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigation } from "@/components/Navigation";
 import { Header } from "@/components/Header";
 import { Dashboard } from "@/components/Dashboard";
@@ -6,9 +6,37 @@ import { MainPage } from "@/components/MainPage";
 import { TeamManagement } from "@/components/TeamManagement";
 import { DashboardCustomization } from "@/components/DashboardCustomization";
 import PricingPage from "@/components/PricingPage";
+import { AuthForm } from "@/components/AuthForm";
+import { supabase } from "@/integrations/supabase/client";
+import type { User, Session } from "@supabase/supabase-js";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("create");
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Show auth form if user is not logged in
+  if (!user) {
+    return <AuthForm />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -41,7 +69,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+      <Navigation activeTab={activeTab} onTabChange={setActiveTab} user={user} />
       
       {/* Main Content */}
       <div className="lg:ml-64 transition-all duration-300">

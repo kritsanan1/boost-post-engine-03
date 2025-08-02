@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "@/components/theme-provider";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import type { User } from "@supabase/supabase-js";
 import { 
   LayoutDashboard, 
   Calendar, 
@@ -13,13 +16,16 @@ import {
   X,
   Sun,
   Moon,
-  Monitor
+  Monitor,
+  LogOut,
+  DollarSign
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  user: User;
 }
 
 const navigationItems = [
@@ -28,12 +34,14 @@ const navigationItems = [
   { id: "schedule", label: "Schedule", icon: Calendar },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "team", label: "Team", icon: Users },
+  { id: "pricing", label: "Pricing", icon: DollarSign },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-export function Navigation({ activeTab, onTabChange }: NavigationProps) {
+export function Navigation({ activeTab, onTabChange, user }: NavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -47,6 +55,24 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
     if (theme === "light") setTheme("dark");
     else if (theme === "dark") setTheme("system");
     else setTheme("light");
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      toast({
+        title: "Signed out",
+        description: "You've been successfully signed out.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -126,22 +152,31 @@ export function Navigation({ activeTab, onTabChange }: NavigationProps) {
 
           {/* User Profile */}
           <div className="p-4 border-t border-border">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-3">
               <Avatar className="w-8 h-8">
-                <AvatarImage src="/placeholder-avatar.jpg" />
+                <AvatarImage src={user.user_metadata?.avatar_url} />
                 <AvatarFallback className="bg-primary text-primary-foreground">
-                  JD
+                  {user.email?.charAt(0).toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
-                  John Doe
+                  {user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  john@example.com
+                  {user.email}
                 </p>
               </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSignOut}
+              className="w-full justify-start gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </Button>
           </div>
         </div>
       </div>
