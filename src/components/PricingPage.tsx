@@ -2,15 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Check } from "lucide-react";
-
 const PricingPage = () => {
   const handleSubscribe = (planType: 'pro' | 'agency') => {
     // TODO: Integrate with Stripe payment
     console.log(`Subscribing to ${planType} plan`);
   };
-
-  return (
-    <div className="min-h-screen bg-gradient-primary py-12 px-4">
+  return <div className="min-h-screen bg-gradient-primary py-12 px-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-16">
@@ -61,10 +58,7 @@ const PricingPage = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full bg-white/20 hover:bg-white/30 text-white border-white/20"
-                variant="outline"
-              >
+              <Button className="w-full bg-white/20 hover:bg-white/30 text-white border-white/20" variant="outline">
                 เริ่มใช้งานฟรี
               </Button>
             </CardFooter>
@@ -124,10 +118,7 @@ const PricingPage = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full bg-primary hover:bg-primary/90"
-                onClick={() => handleSubscribe('pro')}
-              >
+              <Button className="w-full bg-primary hover:bg-primary/90" onClick={() => handleSubscribe('pro')}>
                 เลือกแผน Pro
               </Button>
             </CardFooter>
@@ -182,10 +173,7 @@ const PricingPage = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full bg-warning hover:bg-warning/90 text-warning-foreground"
-                onClick={() => handleSubscribe('agency')}
-              >
+              <Button className="w-full bg-warning hover:bg-warning/90 text-warning-foreground" onClick={() => handleSubscribe('agency')}>
                 เลือกแผน Agency
               </Button>
             </CardFooter>
@@ -193,31 +181,8 @@ const PricingPage = () => {
         </div>
 
         {/* Comparison with Competitors */}
-        <div className="bg-white/5 backdrop-blur-sm rounded-lg p-8 border border-white/10">
-          <h3 className="text-2xl font-bold text-white mb-6 text-center">
-            เปรียบเทียบกับคู่แข่ง
-          </h3>
-          <div className="grid md:grid-cols-3 gap-6 text-center">
-            <div>
-              <h4 className="font-semibold text-white mb-2">SocialBee Pro</h4>
-              <p className="text-white/70">$29/เดือน</p>
-              <p className="text-sm text-white/60">ฟีเจอร์จำกัด</p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-primary mb-2">Boost Post Engine Pro</h4>
-              <p className="text-primary">$15/เดือน</p>
-              <p className="text-sm text-white/80">รองรับแพลตฟอร์มมากกว่า</p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-2">Sociality.io Pro</h4>
-              <p className="text-white/70">$99/เดือน</p>
-              <p className="text-sm text-white/60">ราคาแพงกว่า</p>
-            </div>
-          </div>
-        </div>
+        
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default PricingPage;
