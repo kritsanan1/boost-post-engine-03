@@ -23,7 +23,8 @@ import {
   Linkedin,
   Users,
   X,
-  Loader2
+  Loader2,
+  Target
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -48,34 +49,30 @@ const aiSuggestions = [
 export function PostCreator() {
   const [content, setContent] = useState("");
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [scheduledDate, setScheduledDate] = useState<Date>();
+  const [scheduledTime, setScheduledTime] = useState("12:00");
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
-  const [newMediaUrl, setNewMediaUrl] = useState("");
-  const [scheduleDate, setScheduleDate] = useState<Date>();
-  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+  const [mediaUrl, setMediaUrl] = useState("");
   const [profileKey, setProfileKey] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{content: string, explanation: string}>>([]);
+  const [optimizations, setOptimizations] = useState<any>(null);
   const { toast } = useToast();
 
-  const getMaxChars = () => {
-    if (selectedPlatforms.length === 0) return 280;
-    const selectedPlatformChars = selectedPlatforms.map(id => 
-      platforms.find(p => p.id === id)?.maxChars || 280
-    );
-    return Math.min(...selectedPlatformChars);
-  };
-
   const togglePlatform = (platformId: string) => {
-    setSelectedPlatforms(prev => 
-      prev.includes(platformId) 
+    setSelectedPlatforms(prev =>
+      prev.includes(platformId)
         ? prev.filter(id => id !== platformId)
         : [...prev, platformId]
     );
   };
 
   const addMediaUrl = () => {
-    if (newMediaUrl.trim()) {
-      setMediaUrls(prev => [...prev, newMediaUrl.trim()]);
-      setNewMediaUrl("");
+    if (mediaUrl.trim()) {
+      setMediaUrls(prev => [...prev, mediaUrl.trim()]);
+      setMediaUrl("");
     }
   };
 
@@ -83,13 +80,112 @@ export function PostCreator() {
     setMediaUrls(prev => prev.filter((_, i) => i !== index));
   };
 
+  const generateSuggestions = async () => {
+    if (!content.trim()) {
+      toast({
+        title: "Content Required",
+        description: "Please enter some content to get AI suggestions.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingSuggestions(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-content-suggestions', {
+        body: {
+          prompt: content,
+          tone: 'engaging',
+          platform: selectedPlatforms[0] || 'general',
+          contentType: 'post'
+        }
+      });
+
+      if (error) throw error;
+
+      setSuggestions(data.suggestions || []);
+      toast({
+        title: "Suggestions Generated",
+        description: `Generated ${data.suggestions?.length || 0} content suggestions.`,
+      });
+    } catch (error) {
+      console.error('Error generating suggestions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate content suggestions. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingSuggestions(false);
+    }
+  };
+
+  const optimizePost = async () => {
+    if (!content.trim()) {
+      toast({
+        title: "Content Required",
+        description: "Please enter some content to optimize.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsOptimizing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('optimize-post', {
+        body: {
+          content,
+          platform: selectedPlatforms[0] || 'general'
+        }
+      });
+
+      if (error) throw error;
+
+      setOptimizations(data);
+      if (data.optimizedContent && data.optimizedContent !== content) {
+        setContent(data.optimizedContent);
+      }
+      
+      toast({
+        title: "Post Optimized",
+        description: `Found ${data.optimizations?.length || 0} optimization suggestions.`,
+      });
+    } catch (error) {
+      console.error('Error optimizing post:', error);
+      toast({
+        title: "Error",
+        description: "Failed to optimize post. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const applySuggestion = (suggestion: {content: string, explanation: string}) => {
+    setContent(suggestion.content);
+    toast({
+      title: "Suggestion Applied",
+      description: "Content has been updated with the AI suggestion.",
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!content.trim() || selectedPlatforms.length === 0) {
+    if (!content.trim()) {
       toast({
-        title: "Validation Error",
-        description: "Please provide content and select at least one platform.",
+        title: "Content Required",
+        description: "Please enter some content for your post.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedPlatforms.length === 0) {
+      toast({
+        title: "Platform Required",
+        description: "Please select at least one platform.",
         variant: "destructive",
       });
       return;
@@ -98,59 +194,87 @@ export function PostCreator() {
     setIsSubmitting(true);
 
     try {
-      // Get current user session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        toast({
-          title: "Authentication Error",
-          description: "Please log in to create posts.",
-          variant: "destructive",
-        });
-        return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
       }
 
-      // Call the edge function
-      const { data, error } = await supabase.functions.invoke('create-post', {
-        body: {
-          content,
-          platforms: selectedPlatforms,
-          mediaUrls,
-          scheduleDate: scheduleDate?.toISOString(),
-          profileKey: profileKey.trim() || undefined,
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+      // Create scheduled datetime if date and time are set
+      let scheduledFor = null;
+      if (scheduledDate && scheduledTime) {
+        const [hours, minutes] = scheduledTime.split(':');
+        scheduledFor = new Date(scheduledDate);
+        scheduledFor.setHours(parseInt(hours), parseInt(minutes));
+      }
+
+      const postData = {
+        user_id: user.id,
+        content: content.trim(),
+        media_urls: mediaUrls,
+        profile_key: profileKey || null,
+        scheduled_for: scheduledFor?.toISOString() || null,
+        status: (scheduledFor ? 'scheduled' : 'draft') as 'scheduled' | 'draft',
+        platform_id: '00000000-0000-0000-0000-000000000000' // Default platform ID
+      };
+
+      // Create post in database
+      const { data: post, error: postError } = await supabase
+        .from('posts')
+        .insert(postData)
+        .select()
+        .single();
+
+      if (postError) throw postError;
+
+      // If publishing immediately (no schedule), call Ayrshare
+      if (!scheduledFor) {
+        const { data: publishData, error: publishError } = await supabase.functions.invoke('create-post', {
+          body: {
+            postId: post.id,
+            content: content.trim(),
+            platforms: selectedPlatforms,
+            mediaUrls,
+            profileKey: profileKey || undefined
+          }
+        });
+
+        if (publishError) {
+          console.error('Publishing error:', publishError);
+          // Update post status to error
+          await supabase
+            .from('posts')
+            .update({ 
+              status: 'failed',
+              error_message: publishError.message 
+            })
+            .eq('id', post.id);
+          
+          throw publishError;
+        }
+      }
+
+      toast({
+        title: "Success!",
+        description: scheduledFor 
+          ? `Post scheduled for ${format(scheduledFor, "PPP 'at' p")}`
+          : "Post published successfully!",
       });
 
-      if (error) {
-        throw error;
-      }
+      // Reset form
+      setContent("");
+      setSelectedPlatforms([]);
+      setScheduledDate(undefined);
+      setScheduledTime("12:00");
+      setMediaUrls([]);
+      setProfileKey("");
+      setSuggestions([]);
+      setOptimizations(null);
 
-      if (data.success) {
-        toast({
-          title: "Success!",
-          description: data.message,
-        });
-
-        // Reset form
-        setContent("");
-        setSelectedPlatforms([]);
-        setMediaUrls([]);
-        setNewMediaUrl("");
-        setScheduleDate(undefined);
-        setProfileKey("");
-        setShowAiSuggestions(false);
-      } else {
-        throw new Error(data.error || 'Failed to create post');
-      }
-
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating post:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create post. Please try again.",
+        description: "Failed to create post. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -158,232 +282,271 @@ export function PostCreator() {
     }
   };
 
+  const getCharacterCount = () => {
+    if (selectedPlatforms.length === 0) return content.length;
+    const selectedPlatform = platforms.find(p => p.id === selectedPlatforms[0]);
+    return selectedPlatform ? content.length : content.length;
+  };
+
+  const getMaxCharacters = () => {
+    if (selectedPlatforms.length === 0) return 280;
+    const selectedPlatform = platforms.find(p => p.id === selectedPlatforms[0]);
+    return selectedPlatform ? selectedPlatform.maxChars : 280;
+  };
+
   return (
-    <div className="space-y-6">
-      <Card className="border-border shadow-secondary">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            Create New Post
-          </CardTitle>
-          <CardDescription>
-            Craft your message and schedule it across multiple platforms
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Content */}
-            <div className="space-y-2">
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5" />
+          Create New Post
+        </CardTitle>
+        <CardDescription>
+          Create and schedule your social media posts with AI assistance.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Content Section */}
+          <div className="space-y-4">
+            <div>
               <Label htmlFor="content">Post Content</Label>
               <Textarea
                 id="content"
-                placeholder="What's on your mind? Share your thoughts..."
+                placeholder="What's on your mind?"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 className="min-h-[120px] resize-none"
               />
-              <div className="flex justify-between items-center text-sm text-muted-foreground">
-                <span className={cn(
-                  content.length > getMaxChars() && "text-destructive font-medium"
-                )}>
-                  {content.length}/{getMaxChars()} characters
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAiSuggestions(!showAiSuggestions)}
-                  className="gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  AI Suggestions
-                </Button>
+              <div className="flex justify-between items-center mt-2">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={generateSuggestions}
+                    disabled={isGeneratingSuggestions}
+                    className="flex items-center gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {isGeneratingSuggestions ? "Generating..." : "AI Suggestions"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={optimizePost}
+                    disabled={isOptimizing}
+                    className="flex items-center gap-2"
+                  >
+                    <Target className="h-4 w-4" />
+                    {isOptimizing ? "Optimizing..." : "Optimize"}
+                  </Button>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {getCharacterCount()}/{getMaxCharacters()}
+                </div>
               </div>
             </div>
 
             {/* AI Suggestions */}
-            {showAiSuggestions && (
-              <Card className="bg-gradient-secondary border-primary/20">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                    AI-Powered Suggestions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {aiSuggestions.map((suggestion, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <div className="w-1 h-1 rounded-full bg-primary flex-shrink-0" />
-                      {suggestion}
+            {suggestions.length > 0 && (
+              <div className="border rounded-lg p-4">
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Content Suggestions
+                </h4>
+                <div className="space-y-3">
+                  {suggestions.map((suggestion, index) => (
+                    <div key={index} className="p-3 border rounded-lg">
+                      <p className="text-sm mb-2">{suggestion.content}</p>
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-muted-foreground">{suggestion.explanation}</p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => applySuggestion(suggestion)}
+                        >
+                          Apply
+                        </Button>
+                      </div>
                     </div>
                   ))}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             )}
 
-            {/* Platform Selection */}
-            <div className="space-y-3">
-              <Label>Select Platforms</Label>
-              <div className="grid grid-cols-2 gap-3">
-                {platforms.map((platform) => {
-                  const Icon = platform.icon;
-                  const isSelected = selectedPlatforms.includes(platform.id);
-                  
-                  return (
-                    <Button
-                      key={platform.id}
-                      type="button"
-                      variant={isSelected ? "default" : "outline"}
-                      className={cn(
-                        "justify-start gap-3 h-12",
-                        isSelected && "shadow-glow"
-                      )}
-                      onClick={() => togglePlatform(platform.id)}
-                    >
-                      <div className={cn(
-                        "w-6 h-6 rounded flex items-center justify-center", 
-                        platform.color,
-                        platform.id === "snapchat" && "text-black"
-                      )}>
-                        <Icon className={cn(
-                          "w-3 h-3",
-                          platform.id === "snapchat" ? "text-black" : "text-white"
-                        )} />
+            {/* Optimization Results */}
+            {optimizations && (
+              <div className="border rounded-lg p-4">
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Optimization Suggestions
+                </h4>
+                {optimizations.optimizations && (
+                  <div className="space-y-2 mb-4">
+                    {optimizations.optimizations.map((opt: any, index: number) => (
+                      <div key={index} className="p-2 border rounded text-sm">
+                        <div className="font-medium">{opt.type.charAt(0).toUpperCase() + opt.type.slice(1)}</div>
+                        <div className="text-muted-foreground">{opt.suggestion}</div>
+                        <div className="text-xs text-primary">{opt.reason}</div>
                       </div>
-                      <div className="flex flex-col items-start">
-                        <span className="text-sm">{platform.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {platform.maxChars} chars
-                        </span>
-                      </div>
-                    </Button>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
+                {optimizations.historicalMetrics && (
+                  <div className="text-xs text-muted-foreground">
+                    Based on {optimizations.historicalMetrics.totalPosts} previous posts
+                    (Avg engagement: {Math.round(optimizations.historicalMetrics.avgEngagement)})
+                  </div>
+                )}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Profile Key */}
-            <div className="space-y-2">
-              <Label htmlFor="profileKey">Profile Key (Optional)</Label>
-              <Input
-                id="profileKey"
-                placeholder="Enter profile key for multi-user posting"
-                value={profileKey}
-                onChange={(e) => setProfileKey(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Add a profile key to enable collaborative posting for your team
-              </p>
+          {/* Platform Selection */}
+          <div>
+            <Label>Select Platforms</Label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
+              {platforms.map((platform) => {
+                const Icon = platform.icon;
+                const isSelected = selectedPlatforms.includes(platform.id);
+                return (
+                  <button
+                    key={platform.id}
+                    type="button"
+                    onClick={() => togglePlatform(platform.id)}
+                    className={cn(
+                      "flex items-center gap-2 p-3 rounded-lg border transition-all",
+                      isSelected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="text-sm font-medium">{platform.name}</span>
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Media URLs */}
-            <div className="space-y-3">
-              <Label>Media URLs (Optional)</Label>
+          {/* Media URLs */}
+          <div>
+            <Label>Media URLs (Optional)</Label>
+            <div className="space-y-2 mt-2">
               <div className="flex gap-2">
                 <Input
                   placeholder="https://example.com/image.jpg"
-                  value={newMediaUrl}
-                  onChange={(e) => setNewMediaUrl(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addMediaUrl())}
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
                 />
-                <Button type="button" variant="outline" onClick={addMediaUrl}>
-                  <ImageIcon className="w-4 h-4" />
+                <Button type="button" onClick={addMediaUrl} size="sm">
+                  Add
                 </Button>
               </div>
               {mediaUrls.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {mediaUrls.map((url, index) => (
-                    <div key={index} className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                      <ImageIcon className="w-4 h-4 text-muted-foreground" />
-                      <span className="flex-1 text-sm truncate">{url}</span>
+                    <div key={index} className="flex items-center gap-2 p-2 bg-muted rounded">
+                      <span className="text-sm flex-1 truncate">{url}</span>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => removeMediaUrl(index)}
                       >
-                        <X className="w-4 h-4" />
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
+          </div>
 
-            {/* Schedule */}
-            <div className="space-y-3">
-              <Label>Schedule (Optional)</Label>
-              <div className="flex gap-3">
+          {/* Profile Key */}
+          <div>
+            <Label htmlFor="profileKey">Profile Key (Optional)</Label>
+            <Input
+              id="profileKey"
+              placeholder="Enter profile key for specific account"
+              value={profileKey}
+              onChange={(e) => setProfileKey(e.target.value)}
+            />
+          </div>
+
+          {/* Schedule Section */}
+          <div className="space-y-4">
+            <Label>Schedule (Optional)</Label>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <Label htmlFor="date" className="text-sm">Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       className={cn(
-                        "justify-start text-left font-normal",
-                        !scheduleDate && "text-muted-foreground"
+                        "w-full justify-start text-left font-normal",
+                        !scheduledDate && "text-muted-foreground"
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {scheduleDate ? format(scheduleDate, "PPP") : "Pick a date"}
+                      {scheduledDate ? format(scheduledDate, "PPP") : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
                     <Calendar
                       mode="single"
-                      selected={scheduleDate}
-                      onSelect={setScheduleDate}
+                      selected={scheduledDate}
+                      onSelect={setScheduledDate}
+                      disabled={(date) => date < new Date()}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                
-                {scheduleDate && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setScheduleDate(undefined)}
-                  >
-                    Clear
-                  </Button>
-                )}
+              </div>
+              <div className="flex-1">
+                <Label htmlFor="time" className="text-sm">Time</Label>
+                <Select value={scheduledTime} onValueChange={setScheduledTime}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => {
+                      const hour = i.toString().padStart(2, '0');
+                      return (
+                        <SelectItem key={`${hour}:00`} value={`${hour}:00`}>
+                          {hour}:00
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+          </div>
 
-            <Separator />
-
-            {/* Actions */}
-            <div className="flex gap-3">
-              <Button
-                type="submit"
-                variant="gradient"
-                className="flex-1"
-                disabled={!content.trim() || selectedPlatforms.length === 0 || isSubmitting}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {scheduleDate ? "Scheduling..." : "Publishing..."}
-                  </>
-                ) : scheduleDate ? (
-                  <>
-                    <Clock className="w-4 h-4" />
-                    Schedule Post
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    Post Now
-                  </>
-                )}
-              </Button>
-              
-              <Button type="button" variant="outline" disabled={isSubmitting}>
-                Save Draft
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          {/* Submit Button */}
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : scheduledDate ? (
+                <Clock className="mr-2 h-4 w-4" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              {isSubmitting 
+                ? "Creating..." 
+                : scheduledDate 
+                  ? "Schedule Post" 
+                  : "Publish Now"
+              }
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
